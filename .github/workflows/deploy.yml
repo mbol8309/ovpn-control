@@ -1,0 +1,35 @@
+name: Deploy to Raspberry Pi
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies & build
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy to publish folder
+        run: |
+          DEPLOY_DIR="/srv/projects/ovpn-control"
+          mkdir -p "$DEPLOY_DIR"
+          # Sync built assets and server files
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='client/node_modules' \
+            --exclude='client/src' \
+            ./ "$DEPLOY_DIR/"
+          # Install production deps in deploy dir
+          cd "$DEPLOY_DIR" && npm install --omit=dev
+          # Restart service
+          sudo systemctl restart ovpn-control
+          echo "✅ Deployed to $DEPLOY_DIR"
