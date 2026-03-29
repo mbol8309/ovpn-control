@@ -6,30 +6,51 @@ on:
       - main
 
 jobs:
-  deploy:
-    runs-on: self-hosted
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies & build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install & build
         run: |
           npm install
           npm run build
 
-      - name: Deploy to publish folder
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ovpn-control-dist
+          path: |
+            server.js
+            package.json
+            package-lock.json
+            client/dist/
+          retention-days: 7
+
+  deploy:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ovpn-control-dist
+          path: /tmp/ovpn-control-artifact
+
+      - name: Deploy to production folder
         run: |
           DEPLOY_DIR="/srv/projects/ovpn-control"
           mkdir -p "$DEPLOY_DIR"
-          # Sync built assets and server files
-          rsync -av --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='client/node_modules' \
-            --exclude='client/src' \
-            ./ "$DEPLOY_DIR/"
-          # Install production deps in deploy dir
+          rsync -av --delete /tmp/ovpn-control-artifact/ "$DEPLOY_DIR/"
           cd "$DEPLOY_DIR" && npm install --omit=dev
-          # Restart service
-          sudo systemctl restart ovpn-control
+          rm -rf /tmp/ovpn-control-artifact
           echo "✅ Deployed to $DEPLOY_DIR"
+
+      - name: Restart service
+        run: sudo systemctl restart ovpn-control
